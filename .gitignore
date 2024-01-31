@@ -1,0 +1,6 @@
+/models/ggml-base.en.bin
+/external/whisper_cpp/
+/CMakeCache.txt
+/cmake_install.cmake
+/WhisperTest
+/CMakeFiles
