@@ -22,8 +22,8 @@ message(STATUS "Whisper common sources: ${WHISPER_COMMON_SOURCES}")
 add_executable(${TARGET_NAME} main.cpp
     transcription.hpp
     transcription.cpp
-    video_management.cpp 
-    video_management.hpp
+    video_handler.cpp 
+    video_handler.hpp
     ${WHISPER_COMMON_SOURCES}
 )  
 

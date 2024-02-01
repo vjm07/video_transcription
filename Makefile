@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/vjt/Documents/GitHub/VideoAnalysis/Transcription
+CMAKE_SOURCE_DIR = /home/vjt/Documents/GitHub/video_transcription
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/vjt/Documents/GitHub/VideoAnalysis/Transcription
+CMAKE_BINARY_DIR = /home/vjt/Documents/GitHub/video_transcription
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -87,9 +87,9 @@ rebuild_cache/fast: rebuild_cache
 
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/vjt/Documents/GitHub/VideoAnalysis/Transcription/CMakeFiles /home/vjt/Documents/GitHub/VideoAnalysis/Transcription//CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/vjt/Documents/GitHub/video_transcription/CMakeFiles /home/vjt/Documents/GitHub/video_transcription//CMakeFiles/progress.marks
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/vjt/Documents/GitHub/VideoAnalysis/Transcription/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/vjt/Documents/GitHub/video_transcription/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -273,29 +273,29 @@ transcription.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/transcription.cpp.s
 .PHONY : transcription.cpp.s
 
-video_management.o: video_management.cpp.o
-.PHONY : video_management.o
+video_handler.o: video_handler.cpp.o
+.PHONY : video_handler.o
 
 # target to build an object file
-video_management.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_management.cpp.o
-.PHONY : video_management.cpp.o
+video_handler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_handler.cpp.o
+.PHONY : video_handler.cpp.o
 
-video_management.i: video_management.cpp.i
-.PHONY : video_management.i
+video_handler.i: video_handler.cpp.i
+.PHONY : video_handler.i
 
 # target to preprocess a source file
-video_management.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_management.cpp.i
-.PHONY : video_management.cpp.i
+video_handler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_handler.cpp.i
+.PHONY : video_handler.cpp.i
 
-video_management.s: video_management.cpp.s
-.PHONY : video_management.s
+video_handler.s: video_handler.cpp.s
+.PHONY : video_handler.s
 
 # target to generate assembly for a file
-video_management.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_management.cpp.s
-.PHONY : video_management.cpp.s
+video_handler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/video_handler.cpp.s
+.PHONY : video_handler.cpp.s
 
 # Help Target
 help:
@@ -324,9 +324,9 @@ help:
 	@echo "... transcription.o"
 	@echo "... transcription.i"
 	@echo "... transcription.s"
-	@echo "... video_management.o"
-	@echo "... video_management.i"
-	@echo "... video_management.s"
+	@echo "... video_handler.o"
+	@echo "... video_handler.i"
+	@echo "... video_handler.s"
 .PHONY : help
 
 

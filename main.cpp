@@ -63,8 +63,25 @@
 
 // ######################################################################################################################################################################################################################################################################################################################################################
 #include <chrono>
+#include <string.h>
+#include <stdbool.h>
+#include <cstdio>
 #include "transcription.hpp"
-#include "video_management.hpp"
+#include "video_handler.hpp"
+
+bool endsWith(const char *str, const char *suffix) {
+    if (!str || !suffix) {
+        return false;
+    }
+    size_t str_len = strlen(str);
+    size_t suffix_len = strlen(suffix);
+
+    if (suffix_len > str_len) {
+        return false;
+    }
+
+    return strncmp(str + str_len - suffix_len, suffix, suffix_len) == 0;
+}
 
 int main(int argc, char* argv[]) { // TODO: Push this code to another file
     if (argc < 2) {
@@ -74,19 +91,40 @@ int main(int argc, char* argv[]) { // TODO: Push this code to another file
     const char* input_file = argv[1];
     const char* output_file = "./audio/extracted.wav";
 
-    // Get audio from video
-    extract_audio_from_video(input_file, output_file); // can then pass extracted audio for transcription.
+    if (!endsWith(input_file, ".wav") && !endsWith(input_file, ".mp4")) {
+        std::cerr << "Not a suitable file type." << std::endl;
+        return -1; 
+    }
+
     const char* output_16khz = "./audio/extracted_16khz.wav";
-    if (!convertTo16kHzWav(output_file, output_16khz)) {
-        std::cerr << "Conversion to 16 kHz WAV failed." << std::endl;
-        return 1;
+    if (endsWith(input_file, ".mp4")) {
+        // Get audio from video
+        int success = extract_audio_from_video(input_file, output_file); 
+        if (success < 0 ) {
+            std::cerr << "failed to extract audio from video." << std::endl;
+            return -1;
+        }
+        bool converted = convertTo16kHzWav(output_file, output_16khz);
+        std::remove(output_file);
+        if (!converted) {
+            std::cerr << "Conversion to 16 kHz WAV failed." << std::endl;
+            return 1;
+        }        
+        
+    } else {
+        if (!convertTo16kHzWav(input_file, output_16khz)) {
+            std::cerr << "Conversion to 16 kHz WAV failed." << std::endl;
+            return 1;
+        }
     }
 
     std::cout << "Conversion to 16 kHz WAV completed successfully." << std::endl;
+
     auto start = std::chrono::high_resolution_clock::now();
-    whisper_result wr = start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, false);
+    whisper_result wr = start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, true);
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    std::remove(output_16khz);
     return 0;
 }
 
