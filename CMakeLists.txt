@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
-set(CMAKE_TOOLCHAIN_FILE /home/vjt/Documents/Projects/VideoAnalysis/vcpkg/scripts/buildsystems/vcpkg.cmake CACHE STRING "Vcpkg toolchain file")
+# /mnt/c/Users/vjmar/Documents/1. Code/vcpkg
+set(CMAKE_TOOLCHAIN_FILE "/mnt/c/Users/vjmar/Documents/1. Code/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "Vcpkg toolchain file")
+# set(CMAKE_TOOLCHAIN_FILE /home/vjt/Documents/Projects/VideoAnalysis/vcpkg/scripts/buildsystems/vcpkg.cmake CACHE STRING "Vcpkg toolchain file")
 project(MyNewProject)
 set(TARGET_NAME "WhisperTest")
 
