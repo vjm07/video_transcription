@@ -24,6 +24,10 @@ add_executable(${TARGET_NAME} main.cpp
     transcription.cpp
     video_handler.cpp 
     video_handler.hpp
+    speech_processing.hpp
+    speech_processing.cpp
+    utils.hpp
+    utils.cpp
     ${WHISPER_COMMON_SOURCES}
 )  
 

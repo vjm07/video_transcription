@@ -1,3 +1,7 @@
+#ifndef VIDEO_HANDLER_HPP
+#define VIDEO_HANDLER_HPP
+#endif
+
 #include <iostream>
 #include <fstream>
 

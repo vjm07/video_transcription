@@ -1,3 +1,7 @@
+#ifndef TRANSCRIPTION_HPP
+#define TRANSCRIPTION_HPP
+#endif
+
 #include "common.h"
 #include "transcription.hpp"
 #include "whisper.h"
@@ -1059,7 +1063,6 @@ void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/,
 
     whisper_print_timings(ctx);
     whisper_free(ctx);
-    // whisper_print_usage(argc, argv, params);
     wr.status = "completed";
     return wr;
 }

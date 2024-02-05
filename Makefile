@@ -249,6 +249,30 @@ main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/main.cpp.s
 .PHONY : main.cpp.s
 
+speech_processing.o: speech_processing.cpp.o
+.PHONY : speech_processing.o
+
+# target to build an object file
+speech_processing.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/speech_processing.cpp.o
+.PHONY : speech_processing.cpp.o
+
+speech_processing.i: speech_processing.cpp.i
+.PHONY : speech_processing.i
+
+# target to preprocess a source file
+speech_processing.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/speech_processing.cpp.i
+.PHONY : speech_processing.cpp.i
+
+speech_processing.s: speech_processing.cpp.s
+.PHONY : speech_processing.s
+
+# target to generate assembly for a file
+speech_processing.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/speech_processing.cpp.s
+.PHONY : speech_processing.cpp.s
+
 transcription.o: transcription.cpp.o
 .PHONY : transcription.o
 
@@ -272,6 +296,30 @@ transcription.s: transcription.cpp.s
 transcription.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/transcription.cpp.s
 .PHONY : transcription.cpp.s
+
+utils.o: utils.cpp.o
+.PHONY : utils.o
+
+# target to build an object file
+utils.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/utils.cpp.o
+.PHONY : utils.cpp.o
+
+utils.i: utils.cpp.i
+.PHONY : utils.i
+
+# target to preprocess a source file
+utils.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/utils.cpp.i
+.PHONY : utils.cpp.i
+
+utils.s: utils.cpp.s
+.PHONY : utils.s
+
+# target to generate assembly for a file
+utils.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/WhisperTest.dir/build.make CMakeFiles/WhisperTest.dir/utils.cpp.s
+.PHONY : utils.cpp.s
 
 video_handler.o: video_handler.cpp.o
 .PHONY : video_handler.o
@@ -321,9 +369,15 @@ help:
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
+	@echo "... speech_processing.o"
+	@echo "... speech_processing.i"
+	@echo "... speech_processing.s"
 	@echo "... transcription.o"
 	@echo "... transcription.i"
 	@echo "... transcription.s"
+	@echo "... utils.o"
+	@echo "... utils.i"
+	@echo "... utils.s"
 	@echo "... video_handler.o"
 	@echo "... video_handler.i"
 	@echo "... video_handler.s"
