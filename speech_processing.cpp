@@ -56,6 +56,7 @@ whisper_result transcribe_video(std::string input_file_location) {
     }
 
     // TODO: put some parameters into some settings.
+    // Probably best to put this in to a class so private members can just be used for config, saves passing things into the function all the time.
     auto model_inference_result = start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, true);
     std::remove(output_16khz);
     std::string completed_msg = "completed";

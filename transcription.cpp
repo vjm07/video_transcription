@@ -298,6 +298,40 @@ void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper
     }
 }
 
+
+
+// File Outputs and shit
+char *escape_double_quotes_and_backslashes(const char *str) {
+    if (str == NULL) {
+        return NULL;
+    }
+
+    size_t escaped_length = strlen(str) + 1;
+
+    for (size_t i = 0; str[i] != '\0'; i++) {
+        if (str[i] == '"' || str[i] == '\\') {
+            escaped_length++;
+        }
+    }
+
+    char *escaped = (char *)calloc(escaped_length, 1); // pre-zeroed
+    if (escaped == NULL) {
+        return NULL;
+    }
+
+    size_t pos = 0;
+    for (size_t i = 0; str[i] != '\0'; i++) {
+        if (str[i] == '"' || str[i] == '\\') {
+            escaped[pos++] = '\\';
+        }
+        escaped[pos++] = str[i];
+    }
+
+    // no need to set zero due to calloc() being used prior
+
+    return escaped;
+}
+
 bool output_txt(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
     std::ofstream fout(fname);
     if (!fout.is_open()) {
@@ -384,37 +418,6 @@ bool output_srt(struct whisper_context * ctx, const char * fname, const whisper_
     }
 
     return true;
-}
-
-char *escape_double_quotes_and_backslashes(const char *str) {
-    if (str == NULL) {
-        return NULL;
-    }
-
-    size_t escaped_length = strlen(str) + 1;
-
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        if (str[i] == '"' || str[i] == '\\') {
-            escaped_length++;
-        }
-    }
-
-    char *escaped = (char *)calloc(escaped_length, 1); // pre-zeroed
-    if (escaped == NULL) {
-        return NULL;
-    }
-
-    size_t pos = 0;
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        if (str[i] == '"' || str[i] == '\\') {
-            escaped[pos++] = '\\';
-        }
-        escaped[pos++] = str[i];
-    }
-
-    // no need to set zero due to calloc() being used prior
-
-    return escaped;
 }
 
 bool output_csv(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
@@ -801,6 +804,8 @@ bool output_lrc(struct whisper_context * ctx, const char * fname, const whisper_
 void cb_log_disable(enum ggml_log_level , const char * , void * ) { }
 
 
+
+// The One that matters! :D
 whisper_result start_whisper(std::string file_loc, std::string model_loc, int32_t n_processors, bool diarize, bool no_prints,
 void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {// std::string file_location, std::string model_location="models/ggml-base.en.bin", int32_t processors=1, int32_t threads=4) { // start_whisper(int argc, char ** argv) {
 

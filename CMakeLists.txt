@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
+set(CMAKE_TOOLCHAIN_FILE /home/vjt/Documents/Projects/VideoAnalysis/vcpkg/scripts/buildsystems/vcpkg.cmake CACHE STRING "Vcpkg toolchain file")
 project(MyNewProject)
 set(TARGET_NAME "WhisperTest")
 
@@ -8,6 +9,7 @@ set(FFMPEG_LIBRARIES "-lavcodec -lavformat -lavutil -lavfilter -lavdevice -lswre
 # Find the libraries
 find_package(whisper REQUIRED)
 find_package(SDL2 REQUIRED)
+find_package(hazelcast-cpp-client CONFIG REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/external/whisper_common)
 
@@ -33,5 +35,5 @@ add_executable(${TARGET_NAME} main.cpp
 
 
 target_include_directories(${TARGET_NAME} PRIVATE ${SDL2_INCLUDE_DIRS})
-target_link_libraries(${TARGET_NAME} PRIVATE whisper::whisper ${SDL2_LIBRARIES} ${FFMPEG_LIBRARIES})
+target_link_libraries(${TARGET_NAME} PRIVATE whisper::whisper ${SDL2_LIBRARIES} ${FFMPEG_LIBRARIES} hazelcast-cpp-client::hazelcast-cpp-client)
 target_compile_features(${TARGET_NAME} PRIVATE cxx_std_17)
