@@ -1,4 +1,5 @@
-#include "speech_processing.hpp"
+#include "transcriber.hpp"
+#include "video_handler.hpp"
 #include "utils.hpp"
 
 #include <chrono>
@@ -57,13 +58,17 @@ whisper_result transcribe_video(std::string input_file_location) {
 
     // TODO: put some parameters into some settings.
     // Probably best to put this in to a class so private members can just be used for config, saves passing things into the function all the time.
-    auto model_inference_result = start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, true);
+
+    Transcriber t;
+    auto model_inference_result = t.start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, true);
     std::remove(output_16khz);
     std::string completed_msg = "completed";
     if (model_inference_result.status == completed_msg) {
         wr.status = completed_msg;
         wr.transcriptions = model_inference_result.transcriptions;
+        printf("Size of transcriptions: %d", wr.transcriptions.size());
     }
 
     return wr;
 }
+

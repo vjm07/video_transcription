@@ -24,8 +24,10 @@ file(GLOB_RECURSE WHISPER_COMMON_SOURCES
 message(STATUS "Whisper common sources: ${WHISPER_COMMON_SOURCES}")
 
 add_executable(${TARGET_NAME} main.cpp
-    transcription.hpp
-    transcription.cpp
+    # transcription.hpp
+    # transcription.cpp
+    transcriber.hpp
+    transcriber.cpp
     video_handler.cpp 
     video_handler.hpp
     speech_processing.hpp

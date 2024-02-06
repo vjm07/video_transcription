@@ -26,3 +26,4 @@ std::string generate_uuid() {
     std::string uuidStr = boost::uuids::to_string(uuid);
     return uuidStr;
 }
+

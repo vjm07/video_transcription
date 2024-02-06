@@ -3,7 +3,7 @@
 #endif
 
 #include "common.h"
-#include "transcription.hpp"
+#include "transcriber.hpp"
 #include "whisper.h"
 #include <iostream>
 #include <cmath>
@@ -18,10 +18,6 @@
 #include <chrono>
 #include <typeindex>
 
-#if defined(_MSC_VER)
-#pragma warning(disable: 4244 4267) // possible loss of data
-#endif
-
 
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
@@ -30,9 +26,7 @@ const std::vector<std::string> k_colors = {
     "\033[38;5;226m", "\033[38;5;190m", "\033[38;5;154m", "\033[38;5;118m", "\033[38;5;82m",
 };
 
-//  500 -> 00:05.000
-// 6000 -> 01:00.000
-std::string to_timestamp(int64_t t, bool comma) {
+std::string Transcriber::to_timestamp(int64_t t, bool comma) {
     int64_t msec = t * 10;
     int64_t hr = msec / (1000 * 60 * 60);
     msec = msec - hr * (1000 * 60 * 60);
@@ -47,12 +41,12 @@ std::string to_timestamp(int64_t t, bool comma) {
     return std::string(buf);
 }
 
-int timestamp_to_sample(int64_t t, int n_samples) {
+int Transcriber::timestamp_to_sample(int64_t t, int n_samples) {
     return std::max(0, std::min((int) n_samples - 1, (int) ((t*WHISPER_SAMPLE_RATE)/100)));
 }
 
 // helper function to replace substrings
-void replace_all(std::string & s, const std::string & search, const std::string & replace) {
+void Transcriber::replace_all(std::string & s, const std::string & search, const std::string & replace) {
     for (size_t pos = 0; ; pos += replace.length()) {
         pos = s.find(search, pos);
         if (pos == std::string::npos) break;
@@ -61,7 +55,7 @@ void replace_all(std::string & s, const std::string & search, const std::string 
     }
 }
 
-bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
+bool Transcriber::whisper_params_parse(int argc, char ** argv, whisper_params & params) {
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
 
@@ -133,7 +127,7 @@ bool whisper_params_parse(int argc, char ** argv, whisper_params & params) {
     return true;
 }
 
-void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params) {
+void Transcriber::whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params) {
     fprintf(stderr, "\n");
     fprintf(stderr, "usage: %s [options] file0.wav file1.wav ...\n", argv[0]);
     fprintf(stderr, "\n");
@@ -184,7 +178,7 @@ void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & para
     fprintf(stderr, "\n");
 }
 
-std::string estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s, int64_t t0, int64_t t1, bool id_only) {
+std::string Transcriber::estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s, int64_t t0, int64_t t1, bool id_only) {
     std::string speaker = "";
     const int64_t n_samples = pcmf32s[0].size();
 
@@ -217,7 +211,7 @@ std::string estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s
     return speaker;
 }
 
-void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data) {
+void Transcriber::whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data) {
     int progress_step = ((whisper_print_user_data *) user_data)->params->progress_step;
     int * progress_prev  = &(((whisper_print_user_data *) user_data)->progress_prev);
     if (progress >= *progress_prev + progress_step) {
@@ -226,7 +220,7 @@ void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct wh
     }
 }
 
-void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data) {
+void Transcriber::whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data) {
     const auto & params  = *((whisper_print_user_data *) user_data)->params;
     const auto & pcmf32s = *((whisper_print_user_data *) user_data)->pcmf32s;
 
@@ -332,481 +326,13 @@ char *escape_double_quotes_and_backslashes(const char *str) {
     return escaped;
 }
 
-bool output_txt(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
 
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    for (int i = 0; i < n_segments; ++i) {
-        const char * text = whisper_full_get_segment_text(ctx, i);
-        std::string speaker = "";
-
-        if (params.diarize && pcmf32s.size() == 2)
-        {
-            const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-            const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-            speaker = estimate_diarization_speaker(pcmf32s, t0, t1);
-        }
-
-        fout << speaker << text << "\n";
-    }
-
-    return true;
-}
-
-bool output_vtt(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    fout << "WEBVTT\n\n";
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    for (int i = 0; i < n_segments; ++i) {
-        const char * text = whisper_full_get_segment_text(ctx, i);
-        const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-        const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-        std::string speaker = "";
-
-        if (params.diarize && pcmf32s.size() == 2)
-        {
-            speaker = estimate_diarization_speaker(pcmf32s, t0, t1, true);
-            speaker.insert(0, "<v Speaker");
-            speaker.append(">");
-        }
-
-        fout << to_timestamp(t0) << " --> " << to_timestamp(t1) << "\n";
-        fout << speaker << text << "\n\n";
-    }
-
-    return true;
-}
-
-bool output_srt(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    for (int i = 0; i < n_segments; ++i) {
-        const char * text = whisper_full_get_segment_text(ctx, i);
-        const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-        const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-        std::string speaker = "";
-
-        if (params.diarize && pcmf32s.size() == 2)
-        {
-            speaker = estimate_diarization_speaker(pcmf32s, t0, t1);
-        }
-
-        fout << i + 1 + params.offset_n << "\n";
-        fout << to_timestamp(t0, true) << " --> " << to_timestamp(t1, true) << "\n";
-        fout << speaker << text << "\n\n";
-    }
-
-    return true;
-}
-
-bool output_csv(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    fout << "start,end,";
-    if (params.diarize && pcmf32s.size() == 2)
-    {
-        fout << "speaker,";
-    }
-    fout << "text\n";
-
-    for (int i = 0; i < n_segments; ++i) {
-        const char * text = whisper_full_get_segment_text(ctx, i);
-        const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-        const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-        char * text_escaped = escape_double_quotes_and_backslashes(text);
-
-        //need to multiply times returned from whisper_full_get_segment_t{0,1}() by 10 to get milliseconds.
-        fout << 10 * t0 << "," << 10 * t1 << ",";
-        if (params.diarize && pcmf32s.size() == 2)
-        {
-            fout << estimate_diarization_speaker(pcmf32s, t0, t1, true) << ",";
-        }
-        fout << "\"" << text_escaped << "\"\n";
-    }
-
-    return true;
-}
-
-bool output_score(struct whisper_context * ctx, const char * fname, const whisper_params & /*params*/, std::vector<std::vector<float>> /*pcmf32s*/) {
-    std::ofstream fout(fname);
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    // fprintf(stderr,"segments: %d\n",n_segments);
-    for (int i = 0; i < n_segments; ++i) {
-        const int n_tokens = whisper_full_n_tokens(ctx, i);
-        // fprintf(stderr,"tokens: %d\n",n_tokens);
-        for (int j = 0; j < n_tokens; j++) {
-            auto token = whisper_full_get_token_text(ctx, i, j);
-            auto probability = whisper_full_get_token_p(ctx, i, j);
-            fout << token << '\t' << probability << std::endl;
-            // fprintf(stderr,"token: %s %f\n",token,probability);
-	    }
-    }
-    return true;
-}
-
-bool output_json(struct whisper_context * ctx,  const char * fname, const whisper_params & params, std::vector<std::vector<float>>   pcmf32s, bool   full) {
-    std::ofstream fout(fname);
-    int indent = 0;
-
-    auto doindent = [&]() {
-        for (int i = 0; i < indent; i++) fout << "\t";
-    };
-
-    auto start_arr = [&](const char *name) {
-        doindent();
-        fout << "\"" << name << "\": [\n";
-        indent++;
-    };
-
-    auto end_arr = [&](bool end) {
-        indent--;
-        doindent();
-        fout << (end ? "]\n" : "],\n");
-    };
-
-    auto start_obj = [&](const char *name) {
-        doindent();
-        if (name) {
-            fout << "\"" << name << "\": {\n";
-        } else {
-            fout << "{\n";
-        }
-        indent++;
-    };
-
-    auto end_obj = [&](bool end) {
-        indent--;
-        doindent();
-        fout << (end ? "}\n" : "},\n");
-    };
-
-    auto start_value = [&](const char *name) {
-        doindent();
-        fout << "\"" << name << "\": ";
-    };
-
-    auto value_s = [&](const char *name, const char *val, bool end) {
-        start_value(name);
-        char * val_escaped = escape_double_quotes_and_backslashes(val);
-        fout << "\"" << val_escaped << (end ? "\"\n" : "\",\n");
-        free(val_escaped);
-    };
-
-    auto end_value = [&](bool end) {
-        fout << (end ? "\n" : ",\n");
-    };
-
-    auto value_i = [&](const char *name, const int64_t val, bool end) {
-        start_value(name);
-        fout << val;
-        end_value(end);
-    };
-
-    auto value_f = [&](const char *name, const float val, bool end) {
-        start_value(name);
-        fout << val;
-        end_value(end);
-    };
-
-    auto value_b = [&](const char *name, const bool val, bool end) {
-        start_value(name);
-        fout << (val ? "true" : "false");
-        end_value(end);
-    };
-
-    auto times_o = [&](int64_t t0, int64_t t1, bool end) {
-        start_obj("timestamps");
-        value_s("from", to_timestamp(t0, true).c_str(), false);
-        value_s("to", to_timestamp(t1, true).c_str(), true);
-        end_obj(false);
-        start_obj("offsets");
-        value_i("from", t0 * 10, false);
-        value_i("to", t1 * 10, true);
-        end_obj(end);
-    };
-
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-    start_obj(nullptr);
-        value_s("systeminfo", whisper_print_system_info(), false);
-        start_obj("model");
-            value_s("type", whisper_model_type_readable(ctx), false);
-            value_b("multilingual", whisper_is_multilingual(ctx), false);
-            value_i("vocab", whisper_model_n_vocab(ctx), false);
-            start_obj("audio");
-                value_i("ctx", whisper_model_n_audio_ctx(ctx), false);
-                value_i("state", whisper_model_n_audio_state(ctx), false);
-                value_i("head", whisper_model_n_audio_head(ctx), false);
-                value_i("layer", whisper_model_n_audio_layer(ctx), true);
-            end_obj(false);
-            start_obj("text");
-                value_i("ctx", whisper_model_n_text_ctx(ctx), false);
-                value_i("state", whisper_model_n_text_state(ctx), false);
-                value_i("head", whisper_model_n_text_head(ctx), false);
-                value_i("layer", whisper_model_n_text_layer(ctx), true);
-            end_obj(false);
-            value_i("mels", whisper_model_n_mels(ctx), false);
-            value_i("ftype", whisper_model_ftype(ctx), true);
-        end_obj(false);
-        start_obj("params");
-            value_s("model", params.model.c_str(), false);
-            value_s("language", params.language.c_str(), false);
-            value_b("translate", params.translate, true);
-        end_obj(false);
-        start_obj("result");
-            value_s("language", whisper_lang_str(whisper_full_lang_id(ctx)), true);
-        end_obj(false);
-        start_arr("transcription");
-
-            const int n_segments = whisper_full_n_segments(ctx);
-            for (int i = 0; i < n_segments; ++i) {
-                const char * text = whisper_full_get_segment_text(ctx, i);
-
-                const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-                const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-
-                start_obj(nullptr);
-                    times_o(t0, t1, false);
-                    value_s("text", text, !params.diarize && !params.tinydiarize && !full);
-
-                    if (full) {
-                        start_arr("tokens");
-                        const int n = whisper_full_n_tokens(ctx, i);
-                        for (int j = 0; j < n; ++j) {
-                            auto token = whisper_full_get_token_data(ctx, i, j);
-                            start_obj(nullptr);
-                                value_s("text", whisper_token_to_str(ctx, token.id), false);
-                                if(token.t0 > -1 && token.t1 > -1) {
-                                    // If we have per-token timestamps, write them out
-                                    times_o(token.t0, token.t1, false);
-                                }
-                                value_i("id", token.id, false);
-                                value_f("p", token.p, true);
-                            end_obj(j == (n - 1));
-                        }
-                        end_arr(!params.diarize && !params.tinydiarize);
-                    }
-
-                    if (params.diarize && pcmf32s.size() == 2) {
-                        value_s("speaker", estimate_diarization_speaker(pcmf32s, t0, t1, true).c_str(), true);
-                    }
-
-                    if (params.tinydiarize) {
-                        value_b("speaker_turn_next", whisper_full_get_segment_speaker_turn_next(ctx, i), true);
-                    }
-                end_obj(i == (n_segments - 1));
-            }
-
-        end_arr(true);
-    end_obj(true);
-    return true;
-}
-
-bool output_wts(struct whisper_context * ctx, const char * fname, const char * fname_inp, const whisper_params & params, float t_sec, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    static const char * font = params.font_path.c_str();
-
-    std::ifstream fin(font);
-    if (!fin.is_open()) {
-        fprintf(stderr, "%s: font not found at '%s', please specify a monospace font with -fp\n", __func__, font);
-        return false;
-    }
-
-    fout << "#!/bin/bash" << "\n";
-    fout << "\n";
-
-    fout << "ffmpeg -i " << fname_inp << " -f lavfi -i color=size=1200x120:duration=" << t_sec << ":rate=25:color=black -vf \"";
-
-    for (int i = 0; i < whisper_full_n_segments(ctx); i++) {
-        const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-        const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-
-        const int n = whisper_full_n_tokens(ctx, i);
-
-        std::vector<whisper_token_data> tokens(n);
-        for (int j = 0; j < n; ++j) {
-            tokens[j] = whisper_full_get_token_data(ctx, i, j);
-        }
-
-        if (i > 0) {
-            fout << ",";
-        }
-
-        // background text
-        fout << "drawtext=fontfile='" << font << "':fontsize=24:fontcolor=gray:x=(w-text_w)/2:y=h/2:text='':enable='between(t," << t0/100.0 << "," << t0/100.0 << ")'";
-
-        bool is_first = true;
-        std::string speaker = "";
-
-        if (params.diarize && pcmf32s.size() == 2) {
-            speaker = estimate_diarization_speaker(pcmf32s, t0, t1);
-        }
-
-        for (int j = 0; j < n; ++j) {
-            const auto & token = tokens[j];
-
-            if (tokens[j].id >= whisper_token_eot(ctx)) {
-                continue;
-            }
-
-            std::string txt_bg = "";
-            std::string txt_fg = ""; // highlight token
-            std::string txt_ul = ""; // underline
-
-            if (params.diarize && pcmf32s.size() == 2) {
-                txt_bg = speaker;
-                txt_fg = speaker;
-                txt_ul = "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ ";
-            }
-
-            txt_bg.append("> ");
-            txt_fg.append("> ");
-            txt_ul.append("\\ \\ ");
-
-            {
-                for (int k = 0; k < n; ++k) {
-                    const auto & token2 = tokens[k];
-
-                    if (tokens[k].id >= whisper_token_eot(ctx)) {
-                        continue;
-                    }
-
-                    const std::string txt = whisper_token_to_str(ctx, token2.id);
-
-                    txt_bg += txt;
-
-                    if (k == j) {
-                        for (int l = 0; l < (int) txt.size(); ++l) {
-                            txt_fg += txt[l];
-                            txt_ul += "_";
-                        }
-                        txt_fg += "|";
-                    } else {
-                        for (int l = 0; l < (int) txt.size(); ++l) {
-                            txt_fg += "\\ ";
-                            txt_ul += "\\ ";
-                        }
-                    }
-                }
-
-                ::replace_all(txt_bg, "'", "\u2019");
-                ::replace_all(txt_bg, "\"", "\\\"");
-                ::replace_all(txt_fg, "'", "\u2019");
-                ::replace_all(txt_fg, "\"", "\\\"");
-            }
-
-            if (is_first) {
-                // background text
-                fout << ",drawtext=fontfile='" << font << "':fontsize=24:fontcolor=gray:x=(w-text_w)/2:y=h/2:text='" << txt_bg << "':enable='between(t," << t0/100.0 << "," << t1/100.0 << ")'";
-                is_first = false;
-            }
-
-            // foreground text
-            fout << ",drawtext=fontfile='" << font << "':fontsize=24:fontcolor=lightgreen:x=(w-text_w)/2+8:y=h/2:text='" << txt_fg << "':enable='between(t," << token.t0/100.0 << "," << token.t1/100.0 << ")'";
-
-            // underline
-            fout << ",drawtext=fontfile='" << font << "':fontsize=24:fontcolor=lightgreen:x=(w-text_w)/2+8:y=h/2+16:text='" << txt_ul << "':enable='between(t," << token.t0/100.0 << "," << token.t1/100.0 << ")'";
-        }
-    }
-
-    fout << "\" -c:v libx264 -pix_fmt yuv420p -y " << fname_inp << ".mp4" << "\n";
-
-    fout << "\n\n";
-    fout << "echo \"Your video has been saved to " << fname_inp << ".mp4\"" << "\n";
-    fout << "\n";
-    fout << "echo \"  ffplay " << fname_inp << ".mp4\"\n";
-    fout << "\n";
-
-    fout.close();
-
-    fprintf(stderr, "%s: run 'source %s' to generate karaoke video\n", __func__, fname);
-
-    return true;
-}
-
-bool output_lrc(struct whisper_context * ctx, const char * fname, const whisper_params & params, std::vector<std::vector<float>> pcmf32s) {
-    std::ofstream fout(fname);
-    if (!fout.is_open()) {
-        fprintf(stderr, "%s: failed to open '%s' for writing\n", __func__, fname);
-        return false;
-    }
-
-    fprintf(stderr, "%s: saving output to '%s'\n", __func__, fname);
-
-    fout << "[by:whisper.cpp]\n";
-
-    const int n_segments = whisper_full_n_segments(ctx);
-    for (int i = 0; i < n_segments; ++i) {
-        const char * text = whisper_full_get_segment_text(ctx, i);
-        const int64_t t = whisper_full_get_segment_t0(ctx, i);
-
-        int64_t msec = t * 10;
-        int64_t min = msec / (1000 * 60);
-        msec = msec - min * (1000 * 60);
-        int64_t sec = msec / 1000;
-        msec = msec - sec * 1000;
-
-        char buf[16];
-        snprintf(buf, sizeof(buf), "%02d:%02d.%02d", (int) min, (int) sec, (int) ( msec / 10));
-        std::string timestamp_lrc = std::string(buf);
-        std::string speaker = "";
-
-        if (params.diarize && pcmf32s.size() == 2)
-        {
-            const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-            const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-            speaker = estimate_diarization_speaker(pcmf32s, t0, t1);
-        }
-
-        fout <<  '[' << timestamp_lrc << ']' << speaker << text << "\n";
-    }
-
-    return true;
-}
-
-void cb_log_disable(enum ggml_log_level , const char * , void * ) { }
+void Transcriber::cb_log_disable(enum ggml_log_level , const char * , void * ) { }
 
 
 
 // The One that matters! :D
-whisper_result start_whisper(std::string file_loc, std::string model_loc, int32_t n_processors, bool diarize, bool no_prints,
+whisper_result Transcriber::start_whisper(std::string file_loc, std::string model_loc, int32_t n_processors, bool diarize, bool no_prints,
 void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {// std::string file_location, std::string model_location="models/ggml-base.en.bin", int32_t processors=1, int32_t threads=4) { // start_whisper(int argc, char ** argv) {
 
     whisper_result wr;
@@ -985,55 +511,6 @@ void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/,
 
         // output stuff
         {
-            printf("\n");
-            // output to text file
-            if (params.output_txt) {
-                const auto fname_txt = fname_out + ".txt";
-                output_txt(ctx, fname_txt.c_str(), params, pcmf32s);
-            }
-
-            // output to VTT file
-            if (params.output_vtt) {
-                const auto fname_vtt = fname_out + ".vtt";
-                output_vtt(ctx, fname_vtt.c_str(), params, pcmf32s);
-            }
-
-            // output to SRT file
-            if (params.output_srt) {
-                const auto fname_srt = fname_out + ".srt";
-                output_srt(ctx, fname_srt.c_str(), params, pcmf32s);
-            }
-
-            // output to WTS file
-            if (params.output_wts) {
-                const auto fname_wts = fname_out + ".wts";
-                output_wts(ctx, fname_wts.c_str(), fname_inp.c_str(), params, float(pcmf32.size() + 1000)/WHISPER_SAMPLE_RATE, pcmf32s);
-            }
-
-            // output to CSV file
-            if (params.output_csv) {
-                const auto fname_csv = fname_out + ".csv";
-                output_csv(ctx, fname_csv.c_str(), params, pcmf32s);
-            }
-
-            // output to JSON file
-            if (params.output_jsn) {
-                const auto fname_jsn = fname_out + ".json";
-                output_json(ctx, fname_jsn.c_str(), params, pcmf32s, params.output_jsn_full);
-            }
-
-            // output to LRC file
-            if (params.output_lrc) {
-                const auto fname_lrc = fname_out + ".lrc";
-                output_lrc(ctx, fname_lrc.c_str(), params, pcmf32s);
-            }
-
-            // output to score file
-            if (params.log_score) {
-                const auto fname_score = fname_out + ".score.txt";
-                output_score(ctx, fname_score.c_str(), params, pcmf32s);
-            }
-
             // Populating struct
             const int n_segments = whisper_full_n_segments(ctx);
             for (int i = 0; i < n_segments; ++i) {
