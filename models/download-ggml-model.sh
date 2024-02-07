@@ -104,8 +104,3 @@ if [ $? -ne 0 ]; then
     printf "Please try again later or download the original Whisper model files and convert them yourself.\n"
     exit 1
 fi
-
-printf "Done! Model '$model' saved in '$models_path/ggml-$model.bin'\n"
-printf "You can now use it like this:\n\n"
-printf "  $ ./main -m $models_path/ggml-$model.bin -f samples/jfk.wav\n"
-printf "\n"

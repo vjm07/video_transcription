@@ -1,29 +1,49 @@
-#ifndef TRANSCRIPTION_HPP
-#define TRANSCRIPTION_HPP
-#endif
-
 #include "common.h"
 #include "transcriber.hpp"
 #include "whisper.h"
+#include "utils.hpp"
 #include <iostream>
-#include <cmath>
 #include <fstream>
-#include <cstdio>
 #include <string>
 #include <thread>
 #include <vector>
-#include <cstring>
 #include <sstream>
 #include <cstring>
 #include <chrono>
-#include <typeindex>
+#include <filesystem>
+#include "common-sdl.h"
 
+namespace fs = std::filesystem;
 
 // Terminal color map. 10 colors grouped in ranges [0.0, 0.1, ..., 0.9]
 // Lowest is red, middle is yellow, highest is green.
 const std::vector<std::string> k_colors = {
     "\033[38;5;196m", "\033[38;5;202m", "\033[38;5;208m", "\033[38;5;214m", "\033[38;5;220m",
     "\033[38;5;226m", "\033[38;5;190m", "\033[38;5;154m", "\033[38;5;118m", "\033[38;5;82m",
+};
+
+Transcriber::Transcriber() {
+    Transcriber::model_location = "./models/ggml-base.en.bin";
+    Transcriber::log_progress   = true;
+    Transcriber::n_processors = 2;
+};
+
+Transcriber& Transcriber::get_instance() {
+    static Transcriber instance; 
+    return instance;
+}
+
+bool Transcriber::set_model_location(std::string model_loc) {
+    if (!fs::exists(model_loc)) return false;
+    fs::path f_path = model_loc;
+    std::string extension = f_path.extension().string();
+    if (extension != ".bin") return false;
+    Transcriber::model_location = std::string(model_loc);
+    return true;
+};
+
+std::string Transcriber::get_model_location() {
+    return Transcriber::model_location;
 };
 
 std::string Transcriber::to_timestamp(int64_t t, bool comma) {
@@ -43,16 +63,6 @@ std::string Transcriber::to_timestamp(int64_t t, bool comma) {
 
 int Transcriber::timestamp_to_sample(int64_t t, int n_samples) {
     return std::max(0, std::min((int) n_samples - 1, (int) ((t*WHISPER_SAMPLE_RATE)/100)));
-}
-
-// helper function to replace substrings
-void Transcriber::replace_all(std::string & s, const std::string & search, const std::string & replace) {
-    for (size_t pos = 0; ; pos += replace.length()) {
-        pos = s.find(search, pos);
-        if (pos == std::string::npos) break;
-        s.erase(pos, search.length());
-        s.insert(pos, replace);
-    }
 }
 
 bool Transcriber::whisper_params_parse(int argc, char ** argv, whisper_params & params) {
@@ -292,62 +302,60 @@ void Transcriber::whisper_print_segment_callback(struct whisper_context * ctx, s
     }
 }
 
-
-
-// File Outputs and shit
-char *escape_double_quotes_and_backslashes(const char *str) {
-    if (str == NULL) {
-        return NULL;
-    }
-
-    size_t escaped_length = strlen(str) + 1;
-
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        if (str[i] == '"' || str[i] == '\\') {
-            escaped_length++;
-        }
-    }
-
-    char *escaped = (char *)calloc(escaped_length, 1); // pre-zeroed
-    if (escaped == NULL) {
-        return NULL;
-    }
-
-    size_t pos = 0;
-    for (size_t i = 0; str[i] != '\0'; i++) {
-        if (str[i] == '"' || str[i] == '\\') {
-            escaped[pos++] = '\\';
-        }
-        escaped[pos++] = str[i];
-    }
-
-    // no need to set zero due to calloc() being used prior
-
-    return escaped;
-}
-
-
 void Transcriber::cb_log_disable(enum ggml_log_level , const char * , void * ) { }
 
 
+void Transcriber::whisper_print_usage(int argc, char ** argv, const whisper_stream_params & params) {};
 
-// The One that matters! :D
-whisper_result Transcriber::start_whisper(std::string file_loc, std::string model_loc, int32_t n_processors, bool diarize, bool no_prints,
-void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {// std::string file_location, std::string model_location="models/ggml-base.en.bin", int32_t processors=1, int32_t threads=4) { // start_whisper(int argc, char ** argv) {
+bool Transcriber::whisper_params_parse(int argc, char ** argv, whisper_stream_params & params) {
+    for (int i = 1; i < argc; i++) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            whisper_print_usage(argc, argv, params);
+            exit(0);
+        }
+        else if (arg == "-t"    || arg == "--threads")       { params.n_threads     = std::stoi(argv[++i]); }
+        else if (                  arg == "--step")          { params.step_ms       = std::stoi(argv[++i]); }
+        else if (                  arg == "--length")        { params.length_ms     = std::stoi(argv[++i]); }
+        else if (                  arg == "--keep")          { params.keep_ms       = std::stoi(argv[++i]); }
+        else if (arg == "-c"    || arg == "--capture")       { params.capture_id    = std::stoi(argv[++i]); }
+        else if (arg == "-mt"   || arg == "--max-tokens")    { params.max_tokens    = std::stoi(argv[++i]); }
+        else if (arg == "-ac"   || arg == "--audio-ctx")     { params.audio_ctx     = std::stoi(argv[++i]); }
+        else if (arg == "-vth"  || arg == "--vad-thold")     { params.vad_thold     = std::stof(argv[++i]); }
+        else if (arg == "-fth"  || arg == "--freq-thold")    { params.freq_thold    = std::stof(argv[++i]); }
+        else if (arg == "-su"   || arg == "--speed-up")      { params.speed_up      = true; }
+        else if (arg == "-tr"   || arg == "--translate")     { params.translate     = true; }
+        else if (arg == "-nf"   || arg == "--no-fallback")   { params.no_fallback   = true; }
+        else if (arg == "-ps"   || arg == "--print-special") { params.print_special = true; }
+        else if (arg == "-kc"   || arg == "--keep-context")  { params.no_context    = false; }
+        else if (arg == "-l"    || arg == "--language")      { params.language      = argv[++i]; }
+        else if (arg == "-m"    || arg == "--model")         { params.model         = argv[++i]; }
+        else if (arg == "-f"    || arg == "--file")          { params.fname_out     = argv[++i]; }
+        else if (arg == "-tdrz" || arg == "--tinydiarize")   { params.tinydiarize   = true; }
+        else if (arg == "-sa"   || arg == "--save-audio")    { params.save_audio    = true; }
+        else if (arg == "-ng"   || arg == "--no-gpu")        { params.use_gpu       = false; }
+
+        else {
+            fprintf(stderr, "error: unknown argument: %s\n", arg.c_str());
+            whisper_print_usage(argc, argv, params);
+            exit(0);
+        }
+    }
+
+    return true;
+}
+
+whisper_result Transcriber::start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {// std::string file_location, std::string model_location="models/ggml-base.en.bin", int32_t processors=1, int32_t threads=4) { // start_whisper(int argc, char ** argv) {
 
     whisper_result wr;
     whisper_params params;
 
-    // if (whisper_params_parse(argc, argv, params) == false) {
-    //     wr.status = "could not parse parameters";
-    //     return wr;
-    // }
-
     params.fname_inp.emplace_back(file_loc);
-    params.model = model_loc;
-    params.n_processors = n_processors;
-    params.diarize = diarize;
-    params.no_prints = no_prints;
+    params.model = Transcriber::model_location;
+    params.no_prints = !Transcriber::log_progress;
+    params.n_processors = Transcriber::n_processors;
+    params.diarize = false;
 
     if (params.fname_inp.empty()) {
         wr.status = "no input files specified";
@@ -549,3 +557,314 @@ void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/,
     return wr;
 }
 
+whisper_result Transcriber::start_whisper_stream(int argc, char ** argv) {
+    whisper_result wr;
+    whisper_stream_params params;
+    params.model = Transcriber::model_location;
+
+    if (whisper_params_parse(argc, argv, params) == false) {
+        wr.status = "couldnt not parse parameters";
+        return wr;
+    }
+
+    params.keep_ms   = std::min(params.keep_ms,   params.step_ms);
+    params.length_ms = std::max(params.length_ms, params.step_ms);
+
+    const int n_samples_step = (1e-3*params.step_ms  )*WHISPER_SAMPLE_RATE;
+    const int n_samples_len  = (1e-3*params.length_ms)*WHISPER_SAMPLE_RATE;
+    const int n_samples_keep = (1e-3*params.keep_ms  )*WHISPER_SAMPLE_RATE;
+    const int n_samples_30s  = (1e-3*30000.0         )*WHISPER_SAMPLE_RATE;
+
+    const bool use_vad = n_samples_step <= 0; // sliding window mode uses VAD
+
+    const int n_new_line = !use_vad ? std::max(1, params.length_ms / params.step_ms - 1) : 1; // number of steps to print new line
+
+    params.no_timestamps  = false; //!use_vad;
+    params.no_context    |= use_vad;
+    params.max_tokens     = 0;
+
+    // init audio
+
+    audio_async audio(params.length_ms);
+    if (!audio.init(params.capture_id, WHISPER_SAMPLE_RATE)) {
+        wr.status = "could not start microphone.";
+        fprintf(stderr, "%s: audio.init() failed!\n", __func__);
+        return wr;
+    }
+
+    audio.resume();
+
+    // whisper init
+    if (params.language != "auto" && whisper_lang_id(params.language.c_str()) == -1){
+        fprintf(stderr, "error: unknown language '%s'\n", params.language.c_str());
+        whisper_print_usage(argc, argv, params);
+        exit(0);
+    }
+
+    struct whisper_context_params cparams;
+    cparams.use_gpu = params.use_gpu;
+
+    struct whisper_context * ctx = whisper_init_from_file_with_params(params.model.c_str(), cparams);
+
+    std::vector<float> pcmf32    (n_samples_30s, 0.0f);
+    std::vector<float> pcmf32_old;
+    std::vector<float> pcmf32_new(n_samples_30s, 0.0f);
+
+    std::vector<whisper_token> prompt_tokens;
+
+    // print some info about the processing
+    {
+        fprintf(stderr, "\n");
+        if (!whisper_is_multilingual(ctx)) {
+            if (params.language != "en" || params.translate) {
+                params.language = "en";
+                params.translate = false;
+                fprintf(stderr, "%s: WARNING: model is not multilingual, ignoring language and translation options\n", __func__);
+            }
+        }
+        fprintf(stderr, "%s: processing %d samples (step = %.1f sec / len = %.1f sec / keep = %.1f sec), %d threads, lang = %s, task = %s, timestamps = %d ...\n",
+                __func__,
+                n_samples_step,
+                float(n_samples_step)/WHISPER_SAMPLE_RATE,
+                float(n_samples_len )/WHISPER_SAMPLE_RATE,
+                float(n_samples_keep)/WHISPER_SAMPLE_RATE,
+                params.n_threads,
+                params.language.c_str(),
+                params.translate ? "translate" : "transcribe",
+                params.no_timestamps ? 0 : 1);
+
+        if (!use_vad) {
+            fprintf(stderr, "%s: n_new_line = %d, no_context = %d\n", __func__, n_new_line, params.no_context);
+        } else {
+            fprintf(stderr, "%s: using VAD, will transcribe on speech activity\n", __func__);
+        }
+
+        fprintf(stderr, "\n");
+    }
+
+    int n_iter = 0;
+
+    bool is_running = true;
+
+    std::ofstream fout;
+    if (params.fname_out.length() > 0) {
+        fout.open(params.fname_out);
+        if (!fout.is_open()) {
+            wr.status = "could not open output file";
+            fprintf(stderr, "%s: failed to open output file '%s'!\n", __func__, params.fname_out.c_str());
+            return wr;
+        }
+    }
+
+    wav_writer wavWriter;
+    // save wav file
+    if (params.save_audio) {
+        // Get current date/time for filename
+        time_t now = time(0);
+        char buffer[80];
+        strftime(buffer, sizeof(buffer), "%Y%m%d%H%M%S", localtime(&now));
+        std::string filename = std::string(buffer) + ".wav";
+
+        wavWriter.open(filename, WHISPER_SAMPLE_RATE, 16, 1);
+    }
+    printf("[Start speaking]\n");
+    fflush(stdout);
+
+    auto t_last  = std::chrono::high_resolution_clock::now();
+    const auto t_start = t_last;
+
+    // main audio loop
+    while (is_running) {
+        if (params.save_audio) {
+            wavWriter.write(pcmf32_new.data(), pcmf32_new.size());
+        }
+        // handle Ctrl + C
+        is_running = sdl_poll_events();
+
+        if (!is_running) {
+            break;
+        }
+
+        // process new audio
+
+        if (!use_vad) {
+            while (true) {
+                audio.get(params.step_ms, pcmf32_new);
+
+                if ((int) pcmf32_new.size() > 2*n_samples_step) {
+                    fprintf(stderr, "\n\n%s: WARNING: cannot process audio fast enough, dropping audio ...\n\n", __func__);
+                    audio.clear();
+                    continue;
+                }
+
+                if ((int) pcmf32_new.size() >= n_samples_step) {
+                    audio.clear();
+                    break;
+                }
+
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+
+            const int n_samples_new = pcmf32_new.size();
+
+            // take up to params.length_ms audio from previous iteration
+            const int n_samples_take = std::min((int) pcmf32_old.size(), std::max(0, n_samples_keep + n_samples_len - n_samples_new));
+
+            //printf("processing: take = %d, new = %d, old = %d\n", n_samples_take, n_samples_new, (int) pcmf32_old.size());
+
+            pcmf32.resize(n_samples_new + n_samples_take);
+
+            for (int i = 0; i < n_samples_take; i++) {
+                pcmf32[i] = pcmf32_old[pcmf32_old.size() - n_samples_take + i];
+            }
+
+            memcpy(pcmf32.data() + n_samples_take, pcmf32_new.data(), n_samples_new*sizeof(float));
+
+            pcmf32_old = pcmf32;
+        } else {
+            const auto t_now  = std::chrono::high_resolution_clock::now();
+            const auto t_diff = std::chrono::duration_cast<std::chrono::milliseconds>(t_now - t_last).count();
+
+            if (t_diff < 2000) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                continue;
+            }
+
+            audio.get(2000, pcmf32_new);
+
+            if (::vad_simple(pcmf32_new, WHISPER_SAMPLE_RATE, 1000, params.vad_thold, params.freq_thold, false)) {
+                audio.get(params.length_ms, pcmf32);
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+                continue;
+            }
+
+            t_last = t_now;
+        }
+
+        // run the inference
+        {
+            whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+
+            wparams.print_progress   = false;
+            wparams.print_special    = params.print_special;
+            wparams.print_realtime   = false;
+            wparams.print_timestamps = !params.no_timestamps;
+            wparams.translate        = params.translate;
+            wparams.single_segment   = !use_vad;
+            wparams.max_tokens       = params.max_tokens;
+            wparams.language         = params.language.c_str();
+            wparams.n_threads        = params.n_threads;
+
+            wparams.audio_ctx        = params.audio_ctx;
+            wparams.speed_up         = params.speed_up;
+
+            wparams.tdrz_enable      = params.tinydiarize; // [TDRZ]
+
+            // disable temperature fallback
+            //wparams.temperature_inc  = -1.0f;
+            wparams.temperature_inc  = params.no_fallback ? 0.0f : wparams.temperature_inc;
+
+            wparams.prompt_tokens    = params.no_context ? nullptr : prompt_tokens.data();
+            wparams.prompt_n_tokens  = params.no_context ? 0       : prompt_tokens.size();
+
+            if (whisper_full(ctx, wparams, pcmf32.data(), pcmf32.size()) != 0) {
+                fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+                wr.status = "failed to process audio";
+                return wr;
+            }
+
+            // print result;
+            {
+                if (!use_vad) {
+                    printf("\33[2K\r");
+
+                    // print long empty line to clear the previous line
+                    printf("%s", std::string(100, ' ').c_str());
+
+                    printf("\33[2K\r");
+                } else {
+                    const int64_t t1 = (t_last - t_start).count()/1000000;
+                    const int64_t t0 = std::max(0.0, t1 - pcmf32.size()*1000.0/WHISPER_SAMPLE_RATE);
+
+                    printf("\n");
+                    printf("### Transcription %d START | t0 = %d ms | t1 = %d ms\n", n_iter, (int) t0, (int) t1);
+                    printf("\n");
+                }
+
+                const int n_segments = whisper_full_n_segments(ctx);
+                for (int i = 0; i < n_segments; ++i) {
+                    const char * text = whisper_full_get_segment_text(ctx, i);
+
+                    if (params.no_timestamps) {
+                        printf("%s", text);
+                        fflush(stdout);
+
+                        if (params.fname_out.length() > 0) {
+                            fout << text;
+                        }
+                    } else {
+                        const int64_t t0 = whisper_full_get_segment_t0(ctx, i);
+                        const int64_t t1 = whisper_full_get_segment_t1(ctx, i);
+
+                        std::string output = "[" + to_timestamp(t0) + " --> " + to_timestamp(t1) + "]  " + text;
+
+                        if (whisper_full_get_segment_speaker_turn_next(ctx, i)) {
+                            output += " [SPEAKER_TURN]";
+                        }
+
+                        output += "\n";
+
+                        printf("%s", output.c_str());
+                        fflush(stdout);
+
+                        if (params.fname_out.length() > 0) {
+                            fout << output;
+                        }
+                    }
+                }
+
+                if (params.fname_out.length() > 0) {
+                    fout << std::endl;
+                }
+
+                if (use_vad) {
+                    printf("\n");
+                    printf("### Transcription %d END\n", n_iter);
+                }
+            }
+
+            ++n_iter;
+
+            if (!use_vad && (n_iter % n_new_line) == 0) {
+                printf("\n");
+
+                // keep part of the audio for next iteration to try to mitigate word boundary issues
+                pcmf32_old = std::vector<float>(pcmf32.end() - n_samples_keep, pcmf32.end());
+
+                // Add tokens of the last full length segment as the prompt
+                if (!params.no_context) {
+                    prompt_tokens.clear();
+
+                    const int n_segments = whisper_full_n_segments(ctx);
+                    for (int i = 0; i < n_segments; ++i) {
+                        const int token_count = whisper_full_n_tokens(ctx, i);
+                        for (int j = 0; j < token_count; ++j) {
+                            prompt_tokens.push_back(whisper_full_get_token_id(ctx, i, j));
+                        }
+                    }
+                }
+            }
+            fflush(stdout);
+        }
+    }
+
+    audio.pause();
+
+    whisper_print_timings(ctx);
+    whisper_free(ctx);
+
+    return wr;
+}

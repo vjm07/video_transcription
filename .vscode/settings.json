@@ -97,7 +97,14 @@
         "typeinfo": "cpp",
         "valarray": "cpp",
         "*.ipp": "cpp",
-        "shared_mutex": "cpp"
+        "shared_mutex": "cpp",
+        "complex": "cpp",
+        "source_location": "cpp",
+        "cfenv": "cpp",
+        "variant": "cpp",
+        "filesystem": "cpp",
+        "future": "cpp",
+        "charconv": "cpp"
     },
     "explorer.sortOrder": "type",
     "C_Cpp.errorSquiggles": "enabled"

@@ -59,16 +59,19 @@ whisper_result transcribe_video(std::string input_file_location) {
     // TODO: put some parameters into some settings.
     // Probably best to put this in to a class so private members can just be used for config, saves passing things into the function all the time.
 
-    Transcriber t;
-    auto model_inference_result = t.start_whisper( output_16khz, "./models/ggml-base.en.bin", 1, false, true);
+    Transcriber& t = Transcriber::get_instance();
+    std::cout << "Initial Model Loc" << t.get_model_location() << std::endl;
+    t.set_model_location("./models/ggml-base.en.bin");
+    auto model_inference_result = t.start_whisper( output_16khz);
     std::remove(output_16khz);
     std::string completed_msg = "completed";
+
     if (model_inference_result.status == completed_msg) {
         wr.status = completed_msg;
-        wr.transcriptions = model_inference_result.transcriptions;
-        printf("Size of transcriptions: %d", wr.transcriptions.size());
-    }
 
+    }
+    wr.transcriptions = model_inference_result.transcriptions;
+    printf("Size of transcriptions: %zu\n", wr.transcriptions.size());
     return wr;
 }
 

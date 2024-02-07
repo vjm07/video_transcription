@@ -1,7 +1,3 @@
-#ifndef TRANSCRIBER_HPP
-#define TRANSCRIBER_HPP
-#endif
-
 #include "common.h"
 #include "whisper.h"
 #include <iostream>
@@ -11,7 +7,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <cstring>
 #include <sstream>
 #include <cstring>
 #include <chrono>
@@ -111,22 +106,41 @@ struct whisper_print_user_data {
 };
 
 class Transcriber {
-
+private:
+    std::string model_location;
+    bool log_progress;
+    int32_t n_processors;
 
     static void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * , int n_new, void * user_data);
     static void cb_log_disable(enum ggml_log_level , const char * , void * );
     static std::string to_timestamp(int64_t t, bool comma = false);
     static int timestamp_to_sample(int64_t t, int n_samples);
-    static void replace_all(std::string & s, const std::string & search, const std::string & replace);
-    // static void whisper_print_usage(int argc, char ** argv, const whisper_params & params);
     static bool whisper_params_parse(int argc, char ** argv, whisper_params & params);
+    static bool whisper_params_parse(int argc, char ** argv, whisper_stream_params & params);
+
     static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params);
+    static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_stream_params & params);
     static std::string estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s, int64_t t0, int64_t t1, bool id_only = false);
-    static void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data) ;
+    static void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data);
+    
+    Transcriber();
+public:
+    static Transcriber& get_instance();
 
-    public:
-        whisper_result start_whisper(std::string file_loc, std::string model_loc, int32_t n_processors, bool diarize, bool no_prints,
-            void (*callback)(struct whisper_context * ctx, struct whisper_state *, int n_new, void * user_data) = whisper_print_segment_callback);
+    bool set_model_location(std::string); 
+    std::string get_model_location();
+    
+    void set_n_processors(int32_t np) {Transcriber::n_processors = np;};
+    void set_log_progress(bool log) {Transcriber::log_progress = log;};
+    
 
+    Transcriber(const Transcriber&) = delete;
+    void operator=(const Transcriber&) = delete;
+
+    whisper_result start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state *, int n_new, void * user_data) = whisper_print_segment_callback);
+    whisper_result start_whisper_stream(int argc, char ** argv);
 };
 
+#ifndef TRANSCRIBER_HPP
+#define TRANSCRIBER_HPP
+#endif
