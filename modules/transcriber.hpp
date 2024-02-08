@@ -1,3 +1,6 @@
+#ifndef TRANSCRIBER_HPP
+#define TRANSCRIBER_HPP
+
 #include "common.h"
 #include "whisper.h"
 #include <iostream>
@@ -112,18 +115,14 @@ private:
     int32_t n_processors;
 
     static void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * , int n_new, void * user_data);
-    static void cb_log_disable(enum ggml_log_level , const char * , void * );
+    static void cb_log_disable(enum ggml_log_level , const char * , void * ){};
     static std::string to_timestamp(int64_t t, bool comma = false);
-    static int timestamp_to_sample(int64_t t, int n_samples);
-    static bool whisper_params_parse(int argc, char ** argv, whisper_params & params);
-    static bool whisper_params_parse(int argc, char ** argv, whisper_stream_params & params);
 
-    static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_params & params);
-    static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_stream_params & params);
-    static std::string estimate_diarization_speaker(std::vector<std::vector<float>> pcmf32s, int64_t t0, int64_t t1, bool id_only = false);
-    static void whisper_print_progress_callback(struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, int progress, void * user_data);
-    
+    // Streaming functionality - 90% sure will not be needed
+    // static bool whisper_params_parse(int argc, char ** argv, whisper_stream_params & params);
+    // static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_stream_params & params);
     Transcriber();
+    
 public:
     static Transcriber& get_instance();
 
@@ -138,9 +137,7 @@ public:
     void operator=(const Transcriber&) = delete;
 
     whisper_result start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state *, int n_new, void * user_data) = whisper_print_segment_callback);
-    whisper_result start_whisper_stream(int argc, char ** argv);
+    // whisper_result start_whisper_stream(int argc, char ** argv);
 };
 
-#ifndef TRANSCRIBER_HPP
-#define TRANSCRIBER_HPP
 #endif

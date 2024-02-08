@@ -98,13 +98,13 @@
         "valarray": "cpp",
         "*.ipp": "cpp",
         "shared_mutex": "cpp",
+        "strstream": "cpp",
+        "cfenv": "cpp",
+        "charconv": "cpp",
         "complex": "cpp",
         "source_location": "cpp",
-        "cfenv": "cpp",
-        "variant": "cpp",
-        "filesystem": "cpp",
         "future": "cpp",
-        "charconv": "cpp"
+        "variant": "cpp"
     },
     "explorer.sortOrder": "type",
     "C_Cpp.errorSquiggles": "enabled"

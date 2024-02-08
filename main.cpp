@@ -33,7 +33,7 @@
 #include <vector>
 #include <fstream>
 
-#include "modules/transcriber.hpp"
+#include "modules/actions.hpp"
 //  500 -> 00:05.000
 // 6000 -> 01:00.000
 
@@ -41,8 +41,25 @@
 
 
 int main(int argc, char ** argv) {
-    Transcriber& t = Transcriber::get_instance();
+    
+    if (argc < 2) {
+        std::cerr << "need to specify and mp4 or wav file." << std::endl;
+    }
+    std::string file = argv[1];
+    whisper_result ws = transcribe_video(file);
+    std::cout << ws.status << std::endl;
 
-    t.start_whisper_stream(argc, argv);
+    // write to file to view results
+    std::ofstream out;
+    out.open("./transcription.txt");
+    if (!out) {
+        std::cerr << "could not open file" << std::endl;
+        return 1;
+    }
 
+    for (transcription_item i : ws.transcriptions) {
+        out << i.timestamp << " " << i.text << std::endl;
+    }
+    out.close();
+    
 }

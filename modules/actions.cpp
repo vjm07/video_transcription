@@ -1,3 +1,5 @@
+
+#include "actions.hpp"
 #include "transcriber.hpp"
 #include "video_handler.hpp"
 #include "utils.hpp"
@@ -19,6 +21,7 @@ bool endsWith(const char *str, const char *suffix) {
     return strncmp(str + str_len - suffix_len, suffix, suffix_len) == 0;
 }
 
+// 
 whisper_result transcribe_video(std::string input_file_location) { 
     whisper_result wr;
     std::string tempfiles = get_temp_files_dir();
