@@ -14,6 +14,7 @@
 #include <cstring>
 #include <chrono>
 #include <typeindex>
+#include <algorithm> // For std::copy
 
 struct transcription_item {
     std::string timestamp;
@@ -66,15 +67,78 @@ struct whisper_params {
     std::string language  = "en";
     std::string prompt;
     std::string font_path = "./assets/fonts/Courier New Bold.ttf";
-    std::string model     = "models/ggml-base.en.bin";
+    std::string model     = "./models/ggml-base.en.bin";
 
     // [TDRZ] speaker turn string
     std::string tdrz_speaker_turn = " [SPEAKER_TURN]";
-
     std::string openvino_encode_device = "CPU";
 
-    std::vector<std::string> fname_inp = {};
+    std::string fname_inp = "";
     std::vector<std::string> fname_out = {};
+
+    whisper_params(){};
+    whisper_params(const whisper_params& other)
+        : n_threads(other.n_threads),
+          n_processors(other.n_processors),
+          offset_t_ms(other.offset_t_ms),
+          offset_n(other.offset_n),
+          duration_ms(other.duration_ms),
+          progress_step(other.progress_step),
+          max_context(other.max_context),
+          max_len(other.max_len),
+          best_of(other.best_of),
+          beam_size(other.beam_size),
+          word_thold(other.word_thold),
+          entropy_thold(other.entropy_thold),
+          logprob_thold(other.logprob_thold),
+          speed_up(other.speed_up),
+          debug_mode(other.debug_mode),
+          translate(other.translate),
+          detect_language(other.detect_language),
+          diarize(other.diarize),
+          tinydiarize(other.tinydiarize),
+          split_on_word(other.split_on_word),
+          no_fallback(other.no_fallback),
+          output_txt(other.output_txt),
+          output_vtt(other.output_vtt),
+          output_srt(other.output_srt),
+          output_wts(other.output_wts),
+          output_csv(other.output_csv),
+          output_jsn(other.output_jsn),
+          output_jsn_full(other.output_jsn_full),
+          output_lrc(other.output_lrc),
+          no_prints(other.no_prints),
+          print_special(other.print_special),
+          print_colors(other.print_colors),
+          print_progress(other.print_progress),
+          no_timestamps(other.no_timestamps),
+          log_score(other.log_score),
+          use_gpu(other.use_gpu),
+          language(other.language),
+          prompt(other.prompt),
+          font_path(other.font_path),
+          model(other.model),
+          tdrz_speaker_turn(other.tdrz_speaker_turn),
+          openvino_encode_device(other.openvino_encode_device),
+          fname_inp(other.fname_inp),
+          fname_out(other.fname_out) {}
+
+    whisper_params& operator=(const whisper_params& other) {
+        if (this != &other) { // Protect against self-assignment
+            n_threads = other.n_threads;
+            // Repeat for all other members...
+            language = other.language;
+            prompt = other.prompt;
+            font_path = other.font_path;
+            model = other.model;
+            tdrz_speaker_turn = other.tdrz_speaker_turn;
+            openvino_encode_device = other.openvino_encode_device;
+            fname_inp = other.fname_inp;
+            fname_out = other.fname_out;
+        }
+        return *this;
+    }
+
 };
 struct whisper_stream_params {
     int32_t n_threads  = std::min(4, (int32_t) std::thread::hardware_concurrency());
@@ -109,35 +173,33 @@ struct whisper_print_user_data {
 };
 
 class Transcriber {
-private:
-    std::string model_location;
-    bool log_progress;
-    int32_t n_processors;
+    private:
+        whisper_params whisper_p;
 
-    static void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * , int n_new, void * user_data);
-    static void cb_log_disable(enum ggml_log_level , const char * , void * ){};
-    static std::string to_timestamp(int64_t t, bool comma = false);
+        static void whisper_print_segment_callback(struct whisper_context * ctx, struct whisper_state * , int n_new, void * user_data);
+        static void cb_log_disable(enum ggml_log_level , const char * , void * ){};
+        static std::string to_timestamp(int64_t t, bool comma = false);
 
-    // Streaming functionality - 90% sure will not be needed
-    // static bool whisper_params_parse(int argc, char ** argv, whisper_stream_params & params);
-    // static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_stream_params & params);
-    Transcriber();
-    
-public:
-    static Transcriber& get_instance();
+        // Streaming functionality - 90% sure will not be needed
+        // static bool whisper_params_parse(int argc, char ** argv, whisper_stream_params & params);
+        // static void whisper_print_usage(int /*argc*/, char ** argv, const whisper_stream_params & params);
+        Transcriber();
+        
+    public:
+        static Transcriber& get_instance();
 
-    bool set_model_location(std::string); 
-    std::string get_model_location();
-    
-    void set_n_processors(int32_t np) {Transcriber::n_processors = np;};
-    void set_log_progress(bool log) {Transcriber::log_progress = log;};
-    
+        bool set_model_location(std::string); 
+        std::string get_model_location();
+        
+        void set_n_processors(int32_t np) {Transcriber::whisper_p.n_processors = np;};
+        void set_log_progress(bool log) {Transcriber::whisper_p.no_prints = !log;};
+        
 
-    Transcriber(const Transcriber&) = delete;
-    void operator=(const Transcriber&) = delete;
+        Transcriber(const Transcriber&) = delete;
+        void operator=(const Transcriber&) = delete;
 
-    whisper_result start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state *, int n_new, void * user_data) = whisper_print_segment_callback);
-    // whisper_result start_whisper_stream(int argc, char ** argv);
+        whisper_result start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state *, int n_new, void * user_data) = whisper_print_segment_callback);
+        // whisper_result start_whisper_stream(int argc, char ** argv);
 };
 
 #endif

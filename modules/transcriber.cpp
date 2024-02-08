@@ -23,9 +23,13 @@ const std::vector<std::string> k_colors = {
 };
 
 Transcriber::Transcriber() {
-    Transcriber::model_location = "./models/ggml-base.en.bin";
-    Transcriber::log_progress   = false;
-    Transcriber::n_processors = 2;
+    std::cout << "INITIALISING MODEL PARAMETERS\n";
+    whisper_params p;
+    Transcriber::whisper_p = p;
+    Transcriber::whisper_p.model = "./models/ggml-base.en.bin";
+    Transcriber::whisper_p.no_prints = true;
+    Transcriber::whisper_p.n_processors = 2;
+    Transcriber::whisper_p.diarize = false;
 };
 
 Transcriber& Transcriber::get_instance() {
@@ -38,12 +42,12 @@ bool Transcriber::set_model_location(std::string model_loc) {
     fs::path f_path = model_loc;
     std::string extension = f_path.extension().string();
     if (extension != ".bin") return false;
-    Transcriber::model_location = std::string(model_loc);
+    Transcriber::whisper_p.model = std::string(model_loc);
     return true;
 };
 
 std::string Transcriber::get_model_location() {
-    return Transcriber::model_location;
+    return Transcriber::whisper_p.model;
 };
 
 std::string Transcriber::to_timestamp(int64_t t, bool comma) {
@@ -129,18 +133,12 @@ void Transcriber::whisper_print_segment_callback(struct whisper_context * ctx, s
     }
 }
 
-whisper_result Transcriber::start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {// std::string file_location, std::string model_location="models/ggml-base.en.bin", int32_t processors=1, int32_t threads=4) { // start_whisper(int argc, char ** argv) {
-
+whisper_result Transcriber::start_whisper(std::string file_loc, void (*callback)(struct whisper_context * ctx, struct whisper_state * /*state*/, int n_new, void * user_data)) {
+    
     whisper_result wr;
-    whisper_params params;
+    whisper_params params = Transcriber::whisper_p;
 
-    params.fname_inp.emplace_back(file_loc);
-    params.model = Transcriber::model_location;
-    params.no_prints = !Transcriber::log_progress;
-    params.n_processors = Transcriber::n_processors;
-    params.diarize = false;
-
-    if (params.fname_inp.empty()) {
+    if (file_loc.empty()) {
         wr.status = "no input files specified";
         return wr;
     }
@@ -150,17 +148,12 @@ whisper_result Transcriber::start_whisper(std::string file_loc, void (*callback)
         return wr;
     }
 
-    if (params.diarize && params.tinydiarize) {
-        wr.status = "cannot use diarize and tiny diarize together";
-        return wr;
-    }
-
     if (params.no_prints) {
         whisper_log_set(cb_log_disable, NULL); // pass empty function to overwrite model log function
         params.print_progress = false;
     }
 
-    // whisper init
+    // initialise model
     struct whisper_context_params cparams;
     cparams.use_gpu = params.use_gpu;
     struct whisper_context * ctx = whisper_init_from_file_with_params(params.model.c_str(), cparams);
@@ -170,160 +163,131 @@ whisper_result Transcriber::start_whisper(std::string file_loc, void (*callback)
         return wr;
     }
 
-    // initialize openvino encoder - only affects OpenVINO enabled builds 
+    // initialise openvino encoder - only affects OpenVINO enabled builds 
     whisper_ctx_init_openvino_encoder(ctx, nullptr, params.openvino_encode_device.c_str(), nullptr);
+    std::vector<float> pcmf32;               
+    std::vector<std::vector<float>> pcmf32s; 
 
-    for (int f = 0; f < (int) params.fname_inp.size(); ++f) {
-        const auto fname_inp = params.fname_inp[f];
-		const auto fname_out = f < (int) params.fname_out.size() && !params.fname_out[f].empty() ? params.fname_out[f] : params.fname_inp[f];
+    if (!::read_wav(file_loc, pcmf32, pcmf32s, params.diarize)) {
+        std::stringstream ss;
+        ss << "failed to read WAV file '" << file_loc.c_str() << "' ";
+        wr.status = ss.str();
+        return wr;
+    }
 
-        std::vector<float> pcmf32;               // mono-channel F32 PCM
-        std::vector<std::vector<float>> pcmf32s; // stereo-channel F32 PCM
+    if (!whisper_is_multilingual(ctx)) {
+        if (params.language != "en" || params.translate) {
+            params.language = "en";
+            params.translate = false;
+            fprintf(stderr, "%s: WARNING: model is not multilingual, ignoring language and translation options\n", __func__);
+            wr.status = "model is not multilingual, ignoring language and translation options";
+        }
+    }
+    
+    if (params.detect_language) {
+        params.language = "auto";
+    }
 
-        if (!::read_wav(fname_inp, pcmf32, pcmf32s, params.diarize)) {
+    if (!params.no_prints) {
+        // print system information
+        fprintf(stderr, "\n");
+        fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
+                params.n_threads*params.n_processors, std::thread::hardware_concurrency(), whisper_print_system_info());
+
+        // print some info about the processing
+        fprintf(stderr, "\n");
+        fprintf(stderr, "%s: processing '%s' (%d samples, %.1f sec), %d threads, %d processors, %d beams + best of %d, lang = %s, task = %s, %stimestamps = %d ...\n",
+                __func__, file_loc.c_str(), int(pcmf32.size()), float(pcmf32.size())/WHISPER_SAMPLE_RATE,
+                params.n_threads, params.n_processors, params.beam_size, params.best_of,
+                params.language.c_str(),
+                params.translate ? "translate" : "transcribe",
+                params.no_timestamps ? 0 : 1);
+
+        fprintf(stderr, "\n");
+    }
+
+    // run the inference
+    {
+        whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+
+        wparams.strategy = params.beam_size > 1 ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY;
+
+        wparams.print_realtime   = false;
+        wparams.print_progress   = params.print_progress;
+        wparams.print_timestamps = !params.no_timestamps;
+        wparams.print_special    = params.print_special;
+        wparams.translate        = params.translate;
+        wparams.language         = params.language.c_str();
+        wparams.detect_language  = params.detect_language;
+        wparams.n_threads        = params.n_threads;
+        wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
+        wparams.offset_ms        = params.offset_t_ms;
+        wparams.duration_ms      = params.duration_ms;
+
+        wparams.token_timestamps = params.output_wts || params.output_jsn_full || params.max_len > 0;
+        wparams.thold_pt         = params.word_thold;
+        wparams.max_len          = params.output_wts && params.max_len == 0 ? 60 : params.max_len;
+        wparams.split_on_word    = params.split_on_word;
+
+        wparams.speed_up         = params.speed_up;
+        wparams.debug_mode       = params.debug_mode;
+
+        wparams.tdrz_enable      = params.tinydiarize; // [TDRZ]
+
+        wparams.initial_prompt   = params.prompt.c_str();
+
+        wparams.greedy.best_of        = params.best_of;
+        wparams.beam_search.beam_size = params.beam_size;
+
+        wparams.temperature_inc  = params.no_fallback ? 0.0f : wparams.temperature_inc;
+        wparams.entropy_thold    = params.entropy_thold;
+        wparams.logprob_thold    = params.logprob_thold;
+
+        whisper_print_user_data user_data = { &params, &pcmf32s, 0 };
+
+        // this callback is called on each new segment - probably not best to use segment, progress is more friendly...
+        // ill keep for debugging purposes for now.
+        if (!wparams.print_realtime) {
+            wparams.new_segment_callback           = whisper_print_segment_callback;
+            wparams.new_segment_callback_user_data = &user_data;
+        }
+
+        if (wparams.print_progress) {
+            wparams.progress_callback           = callback;
+            wparams.progress_callback_user_data = &user_data;
+        }
+
+        if (whisper_full_parallel(ctx, wparams, pcmf32.data(), pcmf32.size(), params.n_processors) != 0) {
+            // fprintf(stderr, "%s: failed to process audio\n", argv[0]);
+            wr.status = "failed to process audio";
+            whisper_free(ctx);
+            return wr;
+        }
+    }
+
+    // output stuff
+    {
+        // Populating struct
+        const int n_segments = whisper_full_n_segments(ctx);
+        for (int i = 0; i < n_segments; ++i) {
+            const char * text = whisper_full_get_segment_text(ctx, i);
+            std::string speaker = "";
+
+            // Timestamps
+            int64_t t0 = whisper_full_get_segment_t0(ctx, i);
+            int64_t t1 = whisper_full_get_segment_t1(ctx, i);
+            std::string start = to_timestamp(t0).c_str();
+            std::string end   = to_timestamp(t1).c_str();
+
+            // Add Text to wr.
+            transcription_item a;
+            a.text = text;
+
+            // ss << "[" << start << " --> " << end << "]";
             std::stringstream ss;
-            ss << "failed to read WAV file '" << fname_inp.c_str() << "' ";
-            wr.status = ss.str();
-            continue;
-        }
-
-        if (!whisper_is_multilingual(ctx)) {
-            if (params.language != "en" || params.translate) {
-                params.language = "en";
-                params.translate = false;
-                fprintf(stderr, "%s: WARNING: model is not multilingual, ignoring language and translation options\n", __func__);
-                wr.status = "model is not multilingual, ignoring language and translation options";
-            }
-        }
-        if (params.detect_language) {
-            params.language = "auto";
-        }
-
-        if (!params.no_prints) {
-            // print system information
-            fprintf(stderr, "\n");
-            fprintf(stderr, "system_info: n_threads = %d / %d | %s\n",
-                    params.n_threads*params.n_processors, std::thread::hardware_concurrency(), whisper_print_system_info());
-
-            // print some info about the processing
-            fprintf(stderr, "\n");
-            fprintf(stderr, "%s: processing '%s' (%d samples, %.1f sec), %d threads, %d processors, %d beams + best of %d, lang = %s, task = %s, %stimestamps = %d ...\n",
-                    __func__, fname_inp.c_str(), int(pcmf32.size()), float(pcmf32.size())/WHISPER_SAMPLE_RATE,
-                    params.n_threads, params.n_processors, params.beam_size, params.best_of,
-                    params.language.c_str(),
-                    params.translate ? "translate" : "transcribe",
-                    params.tinydiarize ? "tdrz = 1, " : "",
-                    params.no_timestamps ? 0 : 1);
-
-            fprintf(stderr, "\n");
-        }
-
-        // run the inference
-        {
-            whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-
-            wparams.strategy = params.beam_size > 1 ? WHISPER_SAMPLING_BEAM_SEARCH : WHISPER_SAMPLING_GREEDY;
-
-            wparams.print_realtime   = false;
-            wparams.print_progress   = params.print_progress;
-            wparams.print_timestamps = !params.no_timestamps;
-            wparams.print_special    = params.print_special;
-            wparams.translate        = params.translate;
-            wparams.language         = params.language.c_str();
-            wparams.detect_language  = params.detect_language;
-            wparams.n_threads        = params.n_threads;
-            wparams.n_max_text_ctx   = params.max_context >= 0 ? params.max_context : wparams.n_max_text_ctx;
-            wparams.offset_ms        = params.offset_t_ms;
-            wparams.duration_ms      = params.duration_ms;
-
-            wparams.token_timestamps = params.output_wts || params.output_jsn_full || params.max_len > 0;
-            wparams.thold_pt         = params.word_thold;
-            wparams.max_len          = params.output_wts && params.max_len == 0 ? 60 : params.max_len;
-            wparams.split_on_word    = params.split_on_word;
-
-            wparams.speed_up         = params.speed_up;
-            wparams.debug_mode       = params.debug_mode;
-
-            wparams.tdrz_enable      = params.tinydiarize; // [TDRZ]
-
-            wparams.initial_prompt   = params.prompt.c_str();
-
-            wparams.greedy.best_of        = params.best_of;
-            wparams.beam_search.beam_size = params.beam_size;
-
-            wparams.temperature_inc  = params.no_fallback ? 0.0f : wparams.temperature_inc;
-            wparams.entropy_thold    = params.entropy_thold;
-            wparams.logprob_thold    = params.logprob_thold;
-
-            whisper_print_user_data user_data = { &params, &pcmf32s, 0 };
-
-            // this callback is called on each new segment
-            if (!wparams.print_realtime) {
-                wparams.new_segment_callback           = whisper_print_segment_callback;
-                wparams.new_segment_callback_user_data = &user_data;
-            }
-
-            if (wparams.print_progress) {
-                wparams.progress_callback           = callback;
-                wparams.progress_callback_user_data = &user_data;
-            }
-
-            // examples for abort mechanism
-            // in examples below, we do not abort the processing, but we could if the flag is set to true
-
-            // the callback is called before every encoder run - if it returns false, the processing is aborted
-            {
-                static bool is_aborted = false; // NOTE: this should be atomic to avoid data race
-
-                wparams.encoder_begin_callback = [](struct whisper_context * /*ctx*/, struct whisper_state * /*state*/, void * user_data) {
-                    bool is_aborted = *(bool*)user_data;
-                    return !is_aborted;
-                };
-                wparams.encoder_begin_callback_user_data = &is_aborted;
-            }
-
-            // the callback is called before every computation - if it returns true, the computation is aborted
-            {
-                static bool is_aborted = false; // NOTE: this should be atomic to avoid data race
-
-                wparams.abort_callback = [](void * user_data) {
-                    bool is_aborted = *(bool*)user_data;
-                    return is_aborted;
-                };
-                wparams.abort_callback_user_data = &is_aborted;
-            }
-
-            if (whisper_full_parallel(ctx, wparams, pcmf32.data(), pcmf32.size(), params.n_processors) != 0) {
-                // fprintf(stderr, "%s: failed to process audio\n", argv[0]);
-                wr.status = "failed to process audio";
-                return wr;
-            }
-        }
-
-        // output stuff
-        {
-            // Populating struct
-            const int n_segments = whisper_full_n_segments(ctx);
-            for (int i = 0; i < n_segments; ++i) {
-                const char * text = whisper_full_get_segment_text(ctx, i);
-                std::string speaker = "";
-
-                // Timestamps
-                int64_t t0 = whisper_full_get_segment_t0(ctx, i);
-                int64_t t1 = whisper_full_get_segment_t1(ctx, i);
-                std::string start = to_timestamp(t0).c_str();
-                std::string end   = to_timestamp(t1).c_str();
-
-                // Add Text to wr.
-                transcription_item a;
-                a.text = text;
-
-                // ss << "[" << start << " --> " << end << "]";
-                std::stringstream ss;
-                ss << "[" << start << " --> " << end << "]";
-                a.timestamp = ss.str();
-                wr.transcriptions.push_back(a);
-            }
+            ss << "[" << start << " --> " << end << "]";
+            a.timestamp = ss.str();
+            wr.transcriptions.push_back(a);
         }
     }
 
